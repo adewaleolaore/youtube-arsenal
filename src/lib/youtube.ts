@@ -57,7 +57,7 @@ export async function getVideoMetadata(videoId: string) {
     console.error('Error fetching video metadata:', error);
     console.error('Error details:', {
       message: error instanceof Error ? error.message : 'Unknown error',
-      videoId,
+      videoId: videoId || 'undefined',
       stack: error instanceof Error ? error.stack : undefined
     });
     throw new Error(`Failed to fetch video metadata: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -89,7 +89,7 @@ export async function getVideoTranscript(videoId: string): Promise<string> {
           }
         }
       } catch (langError) {
-        console.log(`Language ${lang} failed:`, langError.message);
+        console.log(`Language ${lang} failed:`, (langError as Error).message || langError);
       }
     }
     
@@ -112,7 +112,7 @@ export async function getVideoTranscript(videoId: string): Promise<string> {
     throw new Error('No captions found with any language option');
     
   } catch (primaryError) {
-    console.warn('youtube-caption-extractor failed, trying fallback method:', primaryError.message);
+    console.warn('youtube-caption-extractor failed, trying fallback method:', (primaryError as Error).message || primaryError);
     
     // Fallback method: original youtube-transcript library
     try {
@@ -131,7 +131,7 @@ export async function getVideoTranscript(videoId: string): Promise<string> {
         return fullText;
       }
     } catch (fallbackError) {
-      console.error('Fallback transcript method also failed:', fallbackError.message);
+      console.error('Fallback transcript method also failed:', (fallbackError as Error).message || fallbackError);
     }
     
     throw new Error('Failed to fetch video transcript. The video may not have captions available.');

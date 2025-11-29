@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerSupabaseClient, getUserFromServer } from '@/lib/supabase-server';
+import { updateVideoAnalysis } from '@/lib/database';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -13,7 +15,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, transcript, description } = body;
+    const { title, transcript, description, videoId } = body;
+
+    const supabase = await createServerSupabaseClient();
+    const user = await getUserFromServer();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
 
     if (!title || !transcript) {
       return NextResponse.json(
@@ -39,19 +50,17 @@ export async function POST(request: NextRequest) {
 
 Video Title: "${title}"
 ${description ? `Original Description: "${description.substring(0, 500)}"` : ''}
-Transcript: "${transcript.substring(0, 12000)}" ${transcript.length > 12000 ? '...(truncated)' : ''}
-
-Create a 2-3 paragraph summary that:
-- Captures the main points and key takeaways
-- Uses engaging language suitable for YouTube audiences
-- Highlights the most interesting or valuable insights
-- Is approximately 150-300 words
-- Focuses on what viewers will learn or gain from watching`;
-
-    const summaryResponse = await model.generateContent(summaryPrompt);
-    const summary = summaryResponse.response.text();
-
-    console.log('Generated summary (' + summary.length + ' characters)');
+    // Save to database if videoId is provided
+    if (videoId) {
+      try {
+        await updateVideoAnalysis(supabase, user.id, videoId, {
+          summary
+        });
+        console.log('Summary saved to database');
+      } catch (dbError) {
+        console.error('Error updating video analysis:', dbError);
+      }
+    }
 
     return NextResponse.json({
       success: true,

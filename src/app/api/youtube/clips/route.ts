@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeTranscriptForClips } from '@/lib/youtube';
+import { createServerSupabaseClient, getUserFromServer } from '@/lib/supabase-server';
+import { saveClips, updateVideoAnalysis } from '@/lib/database';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -14,7 +16,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, transcript, duration } = body;
+    const { title, transcript, duration, videoId } = body;
+
+    const supabase = await createServerSupabaseClient();
+    const user = await getUserFromServer();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
 
     if (!title || !transcript) {
       return NextResponse.json(
@@ -52,31 +63,17 @@ export async function POST(request: NextRequest) {
 
     const durationText = duration ? 'Video Duration: ' + Math.floor(duration / 60) + ':' + (duration % 60).toString().padStart(2, '0') : '';
     const transcriptExcerpt = transcript.substring(0, 8000) + (transcript.length > 8000 ? '...(truncated)' : '');
-    
-    const clipDescriptions = clipSuggestions.map((clip, i) => 
+
+    const clipDescriptions = clipSuggestions.map((clip, i) =>
       (i + 1) + '. "' + clip.title + '" (' + clip.startTime + 's-' + clip.endTime + 's) - Score: ' + clip.hookScore + '\n' +
       '  Reason: ' + clip.reason + '\n' +
       '  Content: "' + clip.transcript.substring(0, 150) + '..."'
     ).join('\n\n');
-    
+
     const clipsPrompt = 'Based on this YouTube video content, improve these clip suggestions for YouTube Shorts and viral content:\n\n' +
       'Video Title: "' + title + '"\n' +
       durationText + '\n' +
       'Transcript excerpt: "' + transcriptExcerpt + '"\n\n' +
-      'Current clip suggestions:\n' + clipDescriptions + '\n\n' +
-      'For each clip, provide an improved title that would work well for YouTube Shorts and viral content. Make them:\n' +
-      '- Punchy and attention-grabbing (under 60 characters)\n' +
-      '- Include emotional hooks or curiosity gaps\n' +
-      '- Use power words and action verbs\n' +
-      '- Create urgency or FOMO\n' +
-      '- Optimized for mobile viewing\n' +
-      '- Include relevant emojis where appropriate\n\n' +
-      'Also suggest the best posting strategy for each clip (best time, hashtags, etc.)\n\n' +
-      'Return in this JSON format:\n' +
-      '{\n' +
-      '  "clips": [\n' +
-      '    {\n' +
-      '      "originalTitle": "original title",\n' +
       '      "improvedTitle": "🔥 VIRAL TITLE HERE",\n' +
       '      "startTime": 123,\n' +
       '      "endTime": 178,\n' +
@@ -88,22 +85,22 @@ export async function POST(request: NextRequest) {
       '      "transcript": "actual content from the clip for preview"\n' +
       '    }\n' +
       '  ]\n' +
-      '}';  
+      '}';
 
     const clipsResponse = await model.generateContent(clipsPrompt);
     let enhancedClipsText = clipsResponse.response.text();
-    
+
     // Try to parse JSON response
     let enhancedClips;
     try {
       // Extract JSON from response if wrapped in markdown
       let jsonText = enhancedClipsText;
-      
+
       // Try to extract from markdown code blocks
       const backtick = String.fromCharCode(96); // backtick character
       const jsonMarker = backtick + backtick + backtick + 'json';
       const codeMarker = backtick + backtick + backtick;
-      
+
       if (enhancedClipsText.includes(jsonMarker)) {
         const startIndex = enhancedClipsText.indexOf(jsonMarker) + jsonMarker.length;
         const endIndex = enhancedClipsText.indexOf(codeMarker, startIndex);
@@ -117,24 +114,24 @@ export async function POST(request: NextRequest) {
           jsonText = enhancedClipsText.substring(startIndex, endIndex).trim();
         }
       }
-      
+
       enhancedClips = JSON.parse(jsonText);
-      
+
       // Ensure transcript content is included from original clips
       if (enhancedClips.clips) {
-        enhancedClips.clips = enhancedClips.clips.map((enhancedClip, index) => ({
+        enhancedClips.clips = enhancedClips.clips.map((enhancedClip: any, index: number) => ({
           ...enhancedClip,
           transcript: clipSuggestions[index]?.transcript || enhancedClip.transcript || ''
         }));
       }
     } catch (parseError) {
       console.warn('Failed to parse AI response as JSON, using fallback method');
-      
+
       // Fallback: Extract titles manually
       const improvedTitles = enhancedClipsText.split('\n')
         .filter(line => line.trim().match(/^[0-9]+\./))
         .map(line => line.replace(/^[0-9]+\.\s*/, '').trim());
-      
+
       enhancedClips = {
         clips: clipSuggestions.map((clip, index) => ({
           originalTitle: clip.title,
@@ -153,19 +150,35 @@ export async function POST(request: NextRequest) {
 
     console.log('Enhanced ' + (enhancedClips.clips?.length || 0) + ' clips');
 
+    // Save clips to database if videoId is provided
+    if (videoId && enhancedClips.clips) {
+      try {
+        await saveClips(supabase, user.id, videoId, enhancedClips.clips.map((clip: any) => ({
+          title: clip.improvedTitle || clip.title || 'Untitled Clip',
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          transcript: clip.transcript,
+          hookScore: clip.hookScore || 0
+        })));
+        console.log('Clips saved to database');
+      } catch (dbError) {
+        console.error('Error saving clips to database:', dbError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         clips: enhancedClips.clips || [],
         totalClips: enhancedClips.clips?.length || 0,
-        highViralPotential: enhancedClips.clips?.filter(c => c.viralPotential === 'HIGH').length || 0
+        highViralPotential: enhancedClips.clips?.filter((c: any) => c.viralPotential === 'HIGH').length || 0
       },
       message: 'Viral clips analyzed and enhanced successfully'
     });
 
   } catch (error) {
     console.error('Error generating clips:', error);
-    
+
     if (error instanceof Error) {
       if (error.message.includes('quota')) {
         return NextResponse.json(
@@ -174,9 +187,9 @@ export async function POST(request: NextRequest) {
         );
       }
     }
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to generate clips',
         details: error instanceof Error ? error.message : 'Unknown error'
       },

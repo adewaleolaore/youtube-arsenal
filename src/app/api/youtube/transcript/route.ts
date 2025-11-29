@@ -5,6 +5,8 @@ import {
   getVideoMetadata, 
   getVideoTranscript 
 } from '@/lib/youtube';
+import { createServerSupabaseClient, getUserFromServer } from '@/lib/supabase-server';
+import { saveVideoData } from '@/lib/database';
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,6 +38,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`Extracting transcript for video: ${videoId}`);
 
+    // Require authentication
+    const supabase = await createServerSupabaseClient();
+    const user = await getUserFromServer();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     // Get video metadata
     let metadata;
     try {
@@ -58,6 +70,23 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to fetch video transcript. Video may not have captions available.' },
         { status: 400 }
       );
+    }
+
+    // Save to database
+    try {
+      await saveVideoData(supabase, user.id, {
+        youtubeUrl,
+        videoId,
+        title: metadata.title,
+        description: metadata.description,
+        transcript,
+        duration: metadata.duration,
+        thumbnailUrl: metadata.thumbnail,
+      });
+      console.log('Video data saved to database');
+    } catch (dbError) {
+      console.error('Error saving video data:', dbError);
+      // Don't fail the request if database save fails
     }
 
     return NextResponse.json({

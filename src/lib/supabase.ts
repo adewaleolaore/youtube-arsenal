@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -7,7 +7,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 
 // Database Types (we'll expand this as we build)
 export interface Database {
@@ -95,31 +95,37 @@ export interface Database {
       clips: {
         Row: {
           id: string;
+          user_id: string;
           video_id: string;
+          video_uuid: string | null;
           title: string;
           start_time: number;
           end_time: number;
-          transcript_excerpt: string;
+          transcript_excerpt: string | null;
           hook_score: number;
           created_at: string;
         };
         Insert: {
           id?: string;
+          user_id: string;
           video_id: string;
+          video_uuid?: string | null;
           title: string;
           start_time: number;
           end_time: number;
-          transcript_excerpt: string;
+          transcript_excerpt?: string | null;
           hook_score?: number;
           created_at?: string;
         };
         Update: {
           id?: string;
+          user_id?: string;
           video_id?: string;
+          video_uuid?: string | null;
           title?: string;
           start_time?: number;
           end_time?: number;
-          transcript_excerpt?: string;
+          transcript_excerpt?: string | null;
           hook_score?: number;
           created_at?: string;
         };

@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { Play, Copy, ExternalLink, Clock, Eye, User, Calendar } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Play, Copy, ExternalLink, Clock, Eye, User, Calendar, LogOut, History, Settings, Download } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 // Import our existing thumbnail functionality
 import ThumbnailEditor from '@/components/ThumbnailEditor';
@@ -23,6 +27,7 @@ interface VideoData {
     uploadDate: string;
   };
   transcript: string;
+  fullTranscript?: string; // Add fullTranscript property
   fullTranscriptLength: number;
   analysis: {
     summary: string;
@@ -30,28 +35,115 @@ interface VideoData {
     keywords: string[];
     clipSuggestions: Array<{
       title: string;
+      improvedTitle?: string; // Add missing property
       startTime: number;
       endTime: number;
       transcript: string;
       hookScore: number;
       reason: string;
+      viralPotential?: string; // Add missing property
+      duration?: number; // Add missing property
+      strategy?: string; // Add missing property
     }>;
   };
 }
 
 export default function Dashboard() {
+  const { user, signOut, loading } = useAuth();
+  const router = useRouter();
+
   const [activeTool, setActiveTool] = useState<ActiveTool>('transcript');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [processingState, setProcessingState] = useState<ProcessingState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [videoData, setVideoData] = useState<VideoData | null>(null);
-  
+  const [history, setHistory] = useState<Array<{
+    videoId: string;
+    title: string;
+    thumbnailUrl: string | null;
+    updatedAt: string;
+  }>>([]);
+
   // Individual processing states for each tool
   const [transcriptState, setTranscriptState] = useState<ProcessingState>('idle');
   const [summaryState, setSummaryState] = useState<ProcessingState>('idle');
   const [descriptionState, setDescriptionState] = useState<ProcessingState>('idle');
   const [keywordsState, setKeywordsState] = useState<ProcessingState>('idle');
   const [clipsState, setClipsState] = useState<ProcessingState>('idle');
+  const [downloadingClip, setDownloadingClip] = useState<string | null>(null);
+
+  const handleSignOut = async () => {
+    const { error } = await signOut();
+    if (error) {
+      setErrorMessage('Failed to sign out');
+    } else {
+      router.push('/login');
+    }
+  };
+
+  // Load recent history when user logs in
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!user || loading) return;
+      try {
+        console.log('📋 Dashboard: Fetching history for user:', user.id);
+        const { data, error } = await supabase
+          .from('videos')
+          .select('video_id,title,thumbnail_url,updated_at')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false })
+          .limit(10);
+
+        console.log('📊 Dashboard history result:', {
+          count: data?.length || 0,
+          error,
+          data: data?.slice(0, 2)
+        });
+
+        if (!error && data) {
+          setHistory(data.map((v: any) => ({
+            videoId: v.video_id,
+            title: v.title,
+            thumbnailUrl: v.thumbnail_url,
+            updatedAt: v.updated_at,
+          })));
+        }
+      } catch (e) {
+        console.warn('Failed to fetch history:', e);
+      }
+    };
+    fetchHistory();
+  }, [user, loading]);
+
+  // Check for loaded video data from sessionStorage (from history page)
+  useEffect(() => {
+    const loadedVideoData = sessionStorage.getItem('loadedVideoData');
+    if (loadedVideoData) {
+      try {
+        const dbVideo = JSON.parse(loadedVideoData);
+        const transformedData = transformDbVideoToState(dbVideo);
+
+        setVideoData(transformedData);
+        setYoutubeUrl(`https://www.youtube.com/watch?v=${dbVideo.video_id}`);
+
+        // Set tool states to success based on available data
+        setTranscriptState(transformedData.transcript ? 'success' : 'idle');
+        setSummaryState(transformedData.analysis.summary ? 'success' : 'idle');
+        setDescriptionState(transformedData.analysis.generatedDescription ? 'success' : 'idle');
+        setKeywordsState(transformedData.analysis.keywords.length > 0 ? 'success' : 'idle');
+        setClipsState(transformedData.analysis.clipSuggestions.length > 0 ? 'success' : 'idle');
+
+        // Switch to transcript view
+        setActiveTool('transcript');
+
+        // Clear the sessionStorage
+        sessionStorage.removeItem('loadedVideoData');
+      } catch (error) {
+        console.error('Error loading video from sessionStorage:', error);
+        sessionStorage.removeItem('loadedVideoData');
+      }
+    }
+  }, []);
 
   // Individual tool handlers
   const extractTranscript = async () => {
@@ -62,7 +154,7 @@ export default function Dashboard() {
 
     setTranscriptState('processing');
     setErrorMessage(null);
-    
+
     try {
       const response = await fetch('/api/youtube/transcript', {
         method: 'POST',
@@ -75,7 +167,7 @@ export default function Dashboard() {
 
       setVideoData(result.data);
       setTranscriptState('success');
-      
+
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to extract transcript');
       setTranscriptState('error');
@@ -83,22 +175,23 @@ export default function Dashboard() {
   };
 
   const generateSummary = async () => {
-    if (!videoData?.metadata?.title || !videoData?.fullTranscript) {
+    if (!videoData?.metadata?.title || !(videoData?.fullTranscript || videoData?.transcript)) {
       setErrorMessage('Please extract transcript first');
       return;
     }
 
     setSummaryState('processing');
     setErrorMessage(null);
-    
+
     try {
       const response = await fetch('/api/youtube/summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           title: videoData.metadata.title,
-          transcript: videoData.fullTranscript,
-          description: videoData.metadata.description
+          transcript: videoData.fullTranscript || videoData.transcript,
+          description: videoData.metadata.description,
+          videoId: videoData.videoId
         }),
       });
 
@@ -107,7 +200,7 @@ export default function Dashboard() {
 
       setVideoData(prev => prev ? {
         ...prev,
-        analysis: { 
+        analysis: {
           summary: result.data.summary,
           generatedDescription: prev.analysis?.generatedDescription || '',
           keywords: prev.analysis?.keywords || [],
@@ -115,7 +208,7 @@ export default function Dashboard() {
         }
       } : null);
       setSummaryState('success');
-      
+
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to generate summary');
       setSummaryState('error');
@@ -130,16 +223,17 @@ export default function Dashboard() {
 
     setDescriptionState('processing');
     setErrorMessage(null);
-    
+
     try {
       const response = await fetch('/api/youtube/description', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           title: videoData.metadata.title,
-          transcript: videoData.fullTranscript,
+          transcript: videoData.fullTranscript || videoData.transcript,
           summary: videoData.analysis?.summary,
-          originalDescription: videoData.metadata.description
+          originalDescription: videoData.metadata.description,
+          videoId: videoData.videoId
         }),
       });
 
@@ -148,7 +242,7 @@ export default function Dashboard() {
 
       setVideoData(prev => prev ? {
         ...prev,
-        analysis: { 
+        analysis: {
           summary: prev.analysis?.summary || '',
           generatedDescription: result.data.description,
           keywords: prev.analysis?.keywords || [],
@@ -156,7 +250,7 @@ export default function Dashboard() {
         }
       } : null);
       setDescriptionState('success');
-      
+
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to generate description');
       setDescriptionState('error');
@@ -171,15 +265,16 @@ export default function Dashboard() {
 
     setKeywordsState('processing');
     setErrorMessage(null);
-    
+
     try {
       const response = await fetch('/api/youtube/keywords', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           title: videoData.metadata.title,
-          transcript: videoData.fullTranscript,
-          summary: videoData.analysis?.summary
+          transcript: videoData.fullTranscript || videoData.transcript,
+          summary: videoData.analysis?.summary,
+          videoId: videoData.videoId
         }),
       });
 
@@ -188,7 +283,7 @@ export default function Dashboard() {
 
       setVideoData(prev => prev ? {
         ...prev,
-        analysis: { 
+        analysis: {
           summary: prev.analysis?.summary || '',
           generatedDescription: prev.analysis?.generatedDescription || '',
           keywords: result.data.keywords,
@@ -196,7 +291,7 @@ export default function Dashboard() {
         }
       } : null);
       setKeywordsState('success');
-      
+
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to generate keywords');
       setKeywordsState('error');
@@ -204,22 +299,23 @@ export default function Dashboard() {
   };
 
   const generateClips = async () => {
-    if (!videoData?.metadata?.title || !videoData?.fullTranscript) {
+    if (!videoData?.metadata?.title || !(videoData?.fullTranscript || videoData?.transcript)) {
       setErrorMessage('Please extract transcript first');
       return;
     }
 
     setClipsState('processing');
     setErrorMessage(null);
-    
+
     try {
       const response = await fetch('/api/youtube/clips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           title: videoData.metadata.title,
-          transcript: videoData.fullTranscript,
-          duration: videoData.metadata.duration
+          transcript: videoData.fullTranscript || videoData.transcript,
+          duration: videoData.metadata.duration,
+          videoId: videoData.videoId
         }),
       });
 
@@ -228,7 +324,7 @@ export default function Dashboard() {
 
       setVideoData(prev => prev ? {
         ...prev,
-        analysis: { 
+        analysis: {
           summary: prev.analysis?.summary || '',
           generatedDescription: prev.analysis?.generatedDescription || '',
           keywords: prev.analysis?.keywords || [],
@@ -236,10 +332,47 @@ export default function Dashboard() {
         }
       } : null);
       setClipsState('success');
-      
+
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to generate clips');
       setClipsState('error');
+    }
+  };
+
+  const handleDownloadClip = async (clip: any, index: number) => {
+    if (!videoData?.videoId) return;
+
+    setDownloadingClip(index.toString());
+
+    try {
+      const response = await fetch('/api/youtube/download-clip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: videoData.videoId,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          crop: true, // Default to vertical crop for Shorts
+          title: clip.improvedTitle || clip.title
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+
+      // Trigger download
+      const link = document.createElement('a');
+      link.href = result.data.url;
+      link.download = result.data.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (error) {
+      console.error('Error downloading clip:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to download clip');
+    } finally {
+      setDownloadingClip(null);
     }
   };
 
@@ -247,7 +380,7 @@ export default function Dashboard() {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     if (hours > 0) {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     } else {
@@ -273,14 +406,99 @@ export default function Dashboard() {
     }
   };
 
+  // Transform database video to UI state
+  const transformDbVideoToState = (dbVideo: any): VideoData => {
+    return {
+      videoId: dbVideo.video_id,
+      youtubeUrl: dbVideo.youtube_url,
+      metadata: {
+        title: dbVideo.title,
+        description: dbVideo.description || '',
+        duration: dbVideo.duration || 0,
+        thumbnail: dbVideo.thumbnail_url || '',
+        author: 'Unknown', // DB doesn't store author info
+        viewCount: 0, // DB doesn't store view count
+        uploadDate: dbVideo.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+      },
+      transcript: dbVideo.transcript || '',
+      fullTranscript: dbVideo.transcript || '',
+      fullTranscriptLength: dbVideo.transcript?.length || 0,
+      analysis: {
+        summary: dbVideo.summary || '',
+        generatedDescription: dbVideo.generated_description || '',
+        keywords: dbVideo.keywords || [],
+        clipSuggestions: dbVideo.clips?.map((clip: any) => ({
+          title: clip.title,
+          startTime: clip.start_time,
+          endTime: clip.end_time,
+          transcript: clip.transcript_excerpt,
+          hookScore: clip.hook_score,
+          reason: 'Loaded from database'
+        })) || []
+      }
+    };
+  };
+
+  // Load video from history
+  const loadHistory = async (videoId: string) => {
+    try {
+      setErrorMessage(null);
+      console.log(`Loading history for video: ${videoId}`);
+
+      const res = await fetch(`/api/video/${videoId}`);
+      if (!res.ok) {
+        throw new Error('Failed to load video from history');
+      }
+
+      const result = await res.json();
+      const transformedData = transformDbVideoToState(result.data);
+
+      setVideoData(transformedData);
+      setYoutubeUrl(`https://www.youtube.com/watch?v=${videoId}`);
+
+      // Set tool states to success based on available data
+      setTranscriptState(transformedData.transcript ? 'success' : 'idle');
+      setSummaryState(transformedData.analysis.summary ? 'success' : 'idle');
+      setDescriptionState(transformedData.analysis.generatedDescription ? 'success' : 'idle');
+      setKeywordsState(transformedData.analysis.keywords.length > 0 ? 'success' : 'idle');
+      setClipsState(transformedData.analysis.clipSuggestions.length > 0 ? 'success' : 'idle');
+
+      // Switch to transcript view
+      setActiveTool('transcript');
+
+    } catch (error) {
+      console.error('Error loading history:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load from history');
+    }
+  };
+
   const tools = [
     { id: 'transcript', name: 'Extract Transcript', icon: '📝', state: transcriptState, action: extractTranscript },
     { id: 'summary', name: 'Generate Summary', icon: '🎯', state: summaryState, action: generateSummary },
     { id: 'description', name: 'Write Description', icon: '📄', state: descriptionState, action: generateDescription },
     { id: 'keywords', name: 'Generate Keywords', icon: '🏷️', state: keywordsState, action: generateKeywords },
     { id: 'clips', name: 'Find Viral Clips', icon: '✂️', state: clipsState, action: generateClips },
-    { id: 'thumbnail-editor', name: 'Thumbnail Editor', icon: '🎨', state: 'idle', action: () => {} }
+    { id: 'thumbnail-editor', name: 'Thumbnail Editor', icon: '🎨', state: 'idle', action: () => { } }
   ];
+
+  // Handle loading state after all hooks are called
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  // Redirect to login if user is not authenticated
+  if (!user) {
+    router.push('/login');
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex">
@@ -312,7 +530,40 @@ export default function Dashboard() {
 
         {/* Navigation Menu */}
         <nav className="flex-1 p-4">
+          {/* Navigation Links */}
+          <div className="space-y-2 mb-6">
+            <Link
+              href="/history"
+              className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <History className="w-5 h-5" />
+              <div className="flex-1">
+                <span className="font-medium text-sm">History</span>
+                {history.length > 0 && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                    {history.length} videos
+                  </span>
+                )}
+              </div>
+            </Link>
+
+            <Link
+              href="/profile"
+              className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Settings className="w-5 h-5" />
+              <div className="flex-1">
+                <span className="font-medium text-sm">Profile</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                  Account settings
+                </span>
+              </div>
+            </Link>
+          </div>
+
+          {/* Tools */}
           <div className="space-y-2">
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4">Tools</span>
             {tools.map((tool) => (
               <button
                 key={tool.id}
@@ -323,11 +574,10 @@ export default function Dashboard() {
                   }
                 }}
                 disabled={tool.state === 'processing'}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors disabled:opacity-50 ${
-                  activeTool === tool.id
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-l-4 border-blue-500'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors disabled:opacity-50 ${activeTool === tool.id
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-l-4 border-blue-500'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  }`}
               >
                 <span className="text-lg">{tool.icon}</span>
                 <div className="flex-1">
@@ -357,8 +607,15 @@ export default function Dashboard() {
               <User className="w-4 h-4 text-white" />
             </div>
             <div className="flex-1">
-              <span className="text-sm font-medium text-gray-900 dark:text-white">User</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{user?.email || 'User'}</span>
             </div>
+            <button
+              onClick={handleSignOut}
+              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </div>
@@ -427,7 +684,7 @@ export default function Dashboard() {
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
                           {videoData.metadata.title}
                         </h2>
-                        
+
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                           <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
                             <Clock className="w-4 h-4" />
@@ -571,13 +828,12 @@ export default function Dashboard() {
                                 {clip.improvedTitle || clip.title}
                               </h4>
                               <div className="flex items-center space-x-2">
-                                <span className={`px-3 py-1 text-sm rounded-full font-medium ${
-                                  (clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')) === 'HIGH'
+                                <span className={`px-3 py-1 text-sm rounded-full font-medium ${(clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')) === 'HIGH'
                                     ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
                                     : (clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')) === 'MEDIUM'
-                                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
-                                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                                }`}>
+                                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
+                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                                  }`}>
                                   {clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')}
                                 </span>
                                 <button
@@ -587,9 +843,21 @@ export default function Dashboard() {
                                 >
                                   <Copy className="w-4 h-4" />
                                 </button>
+                                <button
+                                  onClick={() => handleDownloadClip(clip, index)}
+                                  disabled={downloadingClip === index.toString()}
+                                  className="p-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                  title="Download Vertical Clip"
+                                >
+                                  {downloadingClip === index.toString() ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                  ) : (
+                                    <Download className="w-4 h-4" />
+                                  )}
+                                </button>
                               </div>
                             </div>
-                            
+
                             <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400 mb-4">
                               <div>
                                 <span className="font-medium">Duration:</span> {clip.duration || (clip.endTime - clip.startTime)}s
@@ -610,7 +878,7 @@ export default function Dashboard() {
                                 <p className="text-gray-600 dark:text-gray-400 mt-1">{clip.strategy}</p>
                               </div>
                             )}
-                            
+
                             <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                               <span className="font-medium text-gray-900 dark:text-white text-sm">Content Preview:</span>
                               <p className="text-gray-700 dark:text-gray-300 mt-2 italic">

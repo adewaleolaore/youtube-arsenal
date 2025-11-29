@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerSupabaseClient, getUserFromServer } from '@/lib/supabase-server';
+import { updateVideoAnalysis } from '@/lib/database';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -13,7 +15,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, transcript, summary } = body;
+    const { title, transcript, summary, videoId } = body;
+
+    const supabase = await createServerSupabaseClient();
+    const user = await getUserFromServer();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
 
     if (!title || (!transcript && !summary)) {
       return NextResponse.json(
@@ -67,6 +78,17 @@ Return as a simple comma-separated list without quotes or numbers.`;
       .slice(0, 25); // Limit to 25 keywords max
 
     console.log('Generated ' + keywords.length + ' keywords');
+
+    if (videoId) {
+      try {
+        await updateVideoAnalysis(supabase, user.id, videoId, {
+          keywords
+        });
+        console.log('Keywords saved to database');
+      } catch (dbError) {
+        console.error('Error updating video analysis:', dbError);
+      }
+    }
 
     return NextResponse.json({
       success: true,
