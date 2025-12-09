@@ -1,116 +1,100 @@
-# YouTube Thumbnail Editor & Generator
+# YouTube Arsenal 🚀
 
-This is an AI-powered YouTube thumbnail creation and editing tool built with Next.js and Google Gemini AI. Create professional thumbnails either from scratch using AI generation or by editing existing images.
+**YouTube Arsenal** is an all-in-one AI-powered content creation suite designed to supercharge your YouTube workflow. Built with **Next.js 16**, **Supabase**, and **Google Gemini AI**, it automates the tedious parts of content creation—from transcript analysis to viral clip generation.
 
-## Features
+![YouTube Arsenal Dashboard](https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop)
 
-### 🎨 **Dual Mode Operation**
-- **Generate Mode**: Create thumbnails from text descriptions using AI
-- **Edit Mode**: Upload existing thumbnails and modify them with AI prompts
+## ✨ Key Features
 
-### 📐 **Template-Based Generation**
-- Upload a blank canvas image to define exact dimensions and aspect ratio
-- AI generates thumbnails that match your template's precise measurements
-- Perfect for maintaining consistent thumbnail sizes across your channel
+### 🎥 **Video Analysis & Optimization**
+- **Transcript Extraction**: Instantly fetch transcripts from any public YouTube video.
+- **AI Summaries**: Get concise, engaging summaries of long videos.
+- **SEO Description Generator**: Generate optimized descriptions with hooks, timestamps, and hashtags.
+- **Keyword Research**: Extract high-impact keywords and tags to boost discoverability.
 
-### ✨ **AI-Powered Features**
-- Google Gemini AI integration for both generation and editing
-- Multiple model fallbacks for reliability
-- Automatic image resizing with Sharp to ensure exact dimensions
-- Professional YouTube thumbnail optimization
+### ✂️ **Viral Clip Generator**
+- **Smart Clip Detection**: AI analyzes transcripts to find the most engaging "hook" moments.
+- **Automated Clipping**: Downloads and cuts video segments automatically using `ffmpeg` and `yt-dlp`.
+- **Vertical Cropping**: Automatically crops horizontal videos to **9:16 vertical format** for Shorts, TikTok, and Reels.
+- **Cloud Storage**: Processed clips are uploaded to **Supabase Storage** for easy sharing and permanent access.
 
-### 🎯 **User-Friendly Interface**
-- Drag & drop file uploads
-- Real-time image previews
-- Edit history with thumbnail previews
-- One-click downloads
-- Dark/light mode support
-- Mobile-responsive design
+### 🎨 **Advanced Thumbnail Editor**
+- **AI Generation**: Create click-worthy thumbnails from text prompts using Gemini AI.
+- **Smart Editing**: Upload existing thumbnails and use AI to modify them (e.g., "add a red arrow", "change background to blue").
+- **Template Support**: Upload a template layout to ensure generated images match your branding dimensions.
 
-## How Template-Based Generation Works
+### 🛡️ **Production Ready**
+- **Container-Optimized**: Dockerfile included for easy deployment on Railway, Render, or any container platform.
+- **Supabase Integration**: Full authentication and database history for all your projects.
+- **Robust Error Handling**: Toast notifications and detailed error states for a smooth user experience.
 
-1. **Switch to Generate Mode**: Click "✨ Generate Image"
-2. **Upload Template Canvas**: Drop or select a blank image file (PNG/JPG)
-   - The template defines the exact output dimensions (e.g., 1280×720 for standard YouTube thumbnails)
-   - Can be a simple colored rectangle or any image - only size matters
-3. **Describe Your Thumbnail**: Enter a detailed prompt describing your desired thumbnail
-4. **Generate**: AI creates a thumbnail matching your template's exact dimensions
+---
 
-### Supported Template Formats
-- PNG, JPG, JPEG images
-- Any dimensions (common YouTube sizes: 1280×720, 1920×1080)
-- Template content doesn't matter - only size and aspect ratio are used
+## 🛠️ Tech Stack
 
-## Technical Stack
-
-- **Framework**: Next.js 15 with App Router
+- **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS 4
-- **AI Integration**: Google Gemini AI (@google/generative-ai)
-- **Image Processing**: Sharp for resizing and format conversion
-- **Deployment**: Vercel-ready configuration
+- **AI**: Google Gemini Pro & Flash
+- **Database & Auth**: Supabase
+- **Video Processing**: FFmpeg, yt-dlp, Fluent-FFmpeg
+- **Image Processing**: Sharp
 
-## Getting Started
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
-- Google Gemini API key from [Google AI Studio](https://ai.google.dev/gemini-api/docs/api-key)
+- Node.js 20+
+- FFmpeg installed on your system (for local dev)
+- Supabase Project
+- Google Gemini API Key
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd image-editor
-   ```
+1.  **Clone the repository**
+    ```bash
+    git clone https://github.com/adewaleolaore/youtube-arsenal.git
+    cd youtube-arsenal
+    ```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   # or
-   yarn install
-   ```
+2.  **Install dependencies**
+    ```bash
+    npm install
+    ```
 
-3. **Set up environment variables**
-   Create a `.env.local` file in the root directory:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   ```
+3.  **Environment Setup**
+    Create a `.env.local` file:
+    ```env
+    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+    GEMINI_API_KEY=your_gemini_api_key
+    ```
 
-4. **Run the development server**
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   ```
+4.  **Run Locally**
+    ```bash
+    npm run dev
+    ```
 
-5. **Open the application**
-   Navigate to [http://localhost:3000](http://localhost:3000) in your browser
+---
 
-### Usage Tips
+## 📦 Deployment
 
-**For Template-Based Generation:**
-- Create a blank canvas in your preferred image editor (e.g., Photoshop, GIMP)
-- Standard YouTube thumbnail size: 1280×720 pixels
-- Save as PNG or JPG and upload as your template
-- The AI will generate content that fills your exact template dimensions
+**Note**: This application uses heavy local dependencies (`ffmpeg`, `python`) for video processing. **Serverless platforms like Vercel are NOT recommended** as they will likely time out or fail.
 
-**For Best Results:**
-- Use detailed, specific prompts (e.g., "Tech YouTuber with shocked expression, bright blue background, bold 'AMAZING!' text overlay")
-- Mention colors, emotions, text elements, and composition in your descriptions
-- The AI is optimized for YouTube thumbnail style and engagement
+### Recommended: Railway / Render (Docker)
+This project includes a production-ready `Dockerfile`.
 
-## Learn More
+1.  Push your code to GitHub.
+2.  Connect your repository to **Railway** or **Render**.
+3.  Set your Environment Variables in the dashboard.
+4.  Deploy!
 
-To learn more about Next.js, take a look at the following resources:
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for a detailed guide.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📝 License
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT License.
