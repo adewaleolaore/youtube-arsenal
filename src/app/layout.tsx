@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { Toaster } from "react-hot-toast";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
   title: "YouTube Arsenal - AI-Powered Content Creation Suite",
   description: "Complete YouTube content creation toolkit with AI-powered transcript analysis, thumbnail generation, viral clip detection, and smart content optimization tools.",
   keywords: [
-    "YouTube", "content creation", "AI", "thumbnails", "transcripts", 
+    "YouTube", "content creation", "AI", "thumbnails", "transcripts",
     "video analysis", "viral clips", "YouTube optimization", "Gemini AI"
   ],
   authors: [{ name: "YouTube Arsenal" }],
@@ -50,6 +51,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           {children}
+          <Toaster position="top-right" />
         </AuthProvider>
       </body>
     </html>

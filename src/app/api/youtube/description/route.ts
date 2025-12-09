@@ -45,18 +45,49 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // Generate description
-    const descriptionPrompt = `Create an engaging YouTube video description based on this video content:
+    // Build prompt using array join to avoid template literal nesting issues
+    const promptParts = [
+      'Create an engaging YouTube video description based on this video content:',
+      '',
+      `Video Title: "${title}"`
+    ];
 
-Video Title: "${title}"
-${summary ? `Summary: "${summary}"` : ''}
-${transcript ? `Transcript: "${transcript.substring(0, 8000)}" ${transcript.length > 8000 ? '...(truncated)' : ''}` : ''}
-${originalDescription ? `Original Description: "${originalDescription.substring(0, 1000)}"` : ''}
+    if (summary) {
+      promptParts.push(`Summary: "${summary}"`);
+    }
 
-Generate a compelling YouTube description that:
-- Starts with a hook that makes people want to watch
-- Includes key points and value propositions
-- Has clear calls-to-action
+    if (transcript) {
+      const truncatedTranscript = transcript.substring(0, 8000) + (transcript.length > 8000 ? '...(truncated)' : '');
+      promptParts.push(`Transcript: "${truncatedTranscript}"`);
+    }
+
+    if (originalDescription) {
+      const truncatedDesc = originalDescription.substring(0, 1000);
+      promptParts.push(`Original Description: "${truncatedDesc}"`);
+    }
+
+    promptParts.push('');
+    promptParts.push('Generate a compelling YouTube description that:');
+    promptParts.push('- Starts with a hook that makes people want to watch');
+    promptParts.push('- Includes key points and value propositions');
+    promptParts.push('- Has clear calls-to-action');
+    promptParts.push('- Uses proper formatting with line breaks');
+    promptParts.push('- Includes relevant hashtags at the end');
+    promptParts.push('- Is optimized for YouTube SEO');
+    promptParts.push('- DO NOT use emojis');
+    promptParts.push('- Keep it professional and engaging');
+    promptParts.push('');
+    promptParts.push('YouTube Description:');
+
+    const descriptionPrompt = promptParts.join('\n');
+
+    const result = await model.generateContent(descriptionPrompt);
+    const response = await result.response;
+    const generatedDescription = response.text().trim();
+
+    console.log('Description generated:', generatedDescription.substring(0, 100) + '...');
+
+    // Save to database if videoId is provided
     if (videoId) {
       try {
         await updateVideoAnalysis(supabase, user.id, videoId, {
@@ -80,7 +111,7 @@ Generate a compelling YouTube description that:
 
   } catch (error) {
     console.error('Error generating description:', error);
-    
+
     if (error instanceof Error) {
       if (error.message.includes('quota')) {
         return NextResponse.json(
@@ -89,9 +120,9 @@ Generate a compelling YouTube description that:
         );
       }
     }
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to generate description',
         details: error instanceof Error ? error.message : 'Unknown error'
       },

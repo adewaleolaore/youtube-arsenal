@@ -17,7 +17,7 @@ export function extractVideoId(url: string): string | null {
       return match[1];
     }
   }
-  
+
   return null;
 }
 
@@ -30,7 +30,7 @@ export function isValidYouTubeUrl(url: string): boolean {
 export async function getVideoMetadata(videoId: string) {
   try {
     console.log('Attempting to fetch metadata for video ID:', videoId);
-    
+
     // Try with different options to improve reliability
     const info = await ytdl.getInfo(videoId, {
       requestOptions: {
@@ -40,10 +40,10 @@ export async function getVideoMetadata(videoId: string) {
         },
       },
     });
-    
+
     const videoDetails = info.videoDetails;
     console.log('Successfully fetched metadata for:', videoDetails.title);
-    
+
     return {
       title: videoDetails.title,
       description: videoDetails.description || '',
@@ -67,21 +67,21 @@ export async function getVideoMetadata(videoId: string) {
 // Get video transcript using youtube-caption-extractor (reliable method)
 export async function getVideoTranscript(videoId: string): Promise<string> {
   console.log(`Fetching transcript for video: ${videoId}`);
-  
+
   try {
     // Primary method: youtube-caption-extractor (most reliable)
     const languages = ['en', 'en-US']; // Try English variants first
-    
+
     for (const lang of languages) {
       try {
         console.log(`Trying language: ${lang}`);
         const captions = await getCaptions({ videoID: videoId, lang });
-        
+
         if (captions && captions.length > 0) {
           const textSegments = captions
             .map(caption => caption.text)
             .filter(text => text && text.trim());
-          
+
           if (textSegments.length > 0) {
             const fullText = textSegments.join(' ').replace(/\s+/g, ' ').trim();
             console.log(`✅ Transcript fetched successfully: ${fullText.length} characters, ${captions.length} segments`);
@@ -92,39 +92,39 @@ export async function getVideoTranscript(videoId: string): Promise<string> {
         console.log(`Language ${lang} failed:`, (langError as Error).message || langError);
       }
     }
-    
+
     // Try without language specification as fallback
     console.log('Trying auto-language detection...');
     const captions = await getCaptions({ videoID: videoId });
-    
+
     if (captions && captions.length > 0) {
       const textSegments = captions
         .map(caption => caption.text)
         .filter(text => text && text.trim());
-      
+
       if (textSegments.length > 0) {
         const fullText = textSegments.join(' ').replace(/\s+/g, ' ').trim();
         console.log(`✅ Transcript fetched with auto-language: ${fullText.length} characters, ${captions.length} segments`);
         return fullText;
       }
     }
-    
+
     throw new Error('No captions found with any language option');
-    
+
   } catch (primaryError) {
     console.warn('youtube-caption-extractor failed, trying fallback method:', (primaryError as Error).message || primaryError);
-    
+
     // Fallback method: original youtube-transcript library
     try {
       let transcript = await YoutubeTranscript.fetchTranscript(videoId);
-      
+
       // Try with language hints if empty
       if (!transcript || transcript.length === 0) {
         try {
           transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' } as any);
-        } catch {}
+        } catch { }
       }
-      
+
       if (transcript && transcript.length > 0) {
         const fullText = transcript.map(item => item.text).join(' ');
         console.log(`✅ Fallback transcript fetched: ${fullText.length} characters`);
@@ -133,7 +133,7 @@ export async function getVideoTranscript(videoId: string): Promise<string> {
     } catch (fallbackError) {
       console.error('Fallback transcript method also failed:', (fallbackError as Error).message || fallbackError);
     }
-    
+
     throw new Error('Failed to fetch video transcript. The video may not have captions available.');
   }
 }
@@ -143,7 +143,7 @@ export function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
-  
+
   if (hours > 0) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   } else {
@@ -162,35 +162,43 @@ export interface ClipSuggestion {
 }
 
 export function analyzeTranscriptForClips(
-  transcript: string, 
+  transcript: string,
   transcriptData: Array<{ offset: number; text: string }>,
-  maxClips: number = 6
+  maxClips: number = 6,
+  totalDuration?: number
 ): ClipSuggestion[] {
   const clips: ClipSuggestion[] = [];
-  
+
   // Hook indicators - words/phrases that make good clip starts
   const hookIndicators = [
     'but wait', 'however', 'surprisingly', 'shocking', 'unbelievable',
     'secret', 'hack', 'tip', 'mistake', 'wrong', 'truth', 'revealed',
     'never', 'always', 'everyone', 'nobody', 'first time', 'last time',
     'before', 'after', 'transform', 'change', 'difference', 'compare',
-    'vs', 'versus', 'better', 'worse', 'best', 'worst', 'ultimate'
+    'vs', 'versus', 'better', 'worse', 'best', 'worst', 'ultimate',
+    'how to', 'why', 'what if', 'stop', 'start', 'listen'
   ];
 
   // Emotional indicators
   const emotionalWords = [
     'amazing', 'incredible', 'insane', 'crazy', 'mind-blowing',
-    'shocking', 'surprising', 'unbelievable', 'wow', 'omg'
+    'shocking', 'surprising', 'unbelievable', 'wow', 'omg',
+    'scary', 'terrifying', 'beautiful', 'wonderful', 'love', 'hate'
   ];
 
   // Split transcript into sentences and analyze
-  const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 0);
-  
-  sentences.forEach((sentence, index) => {
+  // Improved splitting to handle more punctuation cases
+  const sentences = transcript.match(/[^.!?]+[.!?]+/g) || transcript.split(/[.!?]+/);
+  const cleanSentences = sentences.map(s => s.trim()).filter(s => s.length > 20);
+
+  // Use passed totalDuration or fallback
+  const duration = totalDuration || (transcriptData.length > 0 ? transcriptData[transcriptData.length - 1].offset / 1000 : 600);
+
+  cleanSentences.forEach((sentence, index) => {
     const lowerSentence = sentence.toLowerCase();
     let hookScore = 0;
     const reasons: string[] = [];
-    
+
     // Check for hook indicators
     hookIndicators.forEach(indicator => {
       if (lowerSentence.includes(indicator)) {
@@ -198,7 +206,7 @@ export function analyzeTranscriptForClips(
         reasons.push(`Contains hook word: "${indicator}"`);
       }
     });
-    
+
     // Check for emotional words
     emotionalWords.forEach(word => {
       if (lowerSentence.includes(word)) {
@@ -206,26 +214,25 @@ export function analyzeTranscriptForClips(
         reasons.push(`Emotional content: "${word}"`);
       }
     });
-    
+
     // Check for questions
     if (sentence.includes('?')) {
       hookScore += 1;
       reasons.push('Contains question');
     }
-    
+
     // Check for numbers/statistics
     if (/\d+/.test(sentence)) {
       hookScore += 1;
       reasons.push('Contains numbers/stats');
     }
-    
-    // Only consider sentences with decent hook scores
-    if (hookScore >= 2 && sentence.trim().length > 50) {
+
+    // Relaxed threshold: consider >= 1
+    if (hookScore >= 1) {
       // Estimate timing (rough approximation)
-      const totalDuration = transcriptData.length > 0 ? transcriptData[transcriptData.length - 1].offset / 1000 : 600;
-      const estimatedStart = Math.floor((index / sentences.length) * totalDuration);
-      const estimatedEnd = Math.min(estimatedStart + 45, totalDuration); // 45 second clips
-      
+      const estimatedStart = Math.floor((index / cleanSentences.length) * duration);
+      const estimatedEnd = Math.min(estimatedStart + 45, duration); // 45 second clips
+
       clips.push({
         title: sentence.trim().substring(0, 100) + (sentence.length > 100 ? '...' : ''),
         startTime: estimatedStart,
@@ -236,7 +243,31 @@ export function analyzeTranscriptForClips(
       });
     }
   });
-  
+
+  // If we still have no clips or very few, create fallback clips by chunking
+  if (clips.length < 2) {
+    const chunkDuration = Math.min(60, duration / maxClips);
+    const step = Math.floor(duration / maxClips);
+
+    for (let i = 0; i < maxClips; i++) {
+      const startTime = i * step;
+      const endTime = Math.min(startTime + chunkDuration, duration);
+
+      // Find rough sentence corresponding to this time
+      const sentenceIndex = Math.floor((startTime / duration) * cleanSentences.length);
+      const sentence = cleanSentences[sentenceIndex] || "Segment " + (i + 1);
+
+      clips.push({
+        title: `Part ${i + 1}: ${sentence.substring(0, 50)}...`,
+        startTime,
+        endTime,
+        transcript: sentence,
+        hookScore: 1,
+        reason: 'Segmented based on timing'
+      });
+    }
+  }
+
   // Sort by hook score and return top clips
   return clips
     .sort((a, b) => b.hookScore - a.hookScore)

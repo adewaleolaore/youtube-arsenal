@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     console.log('Analyzing transcript for viral clips...');
 
     // Step 1: Use our algorithm to find potential clips
-    const clipSuggestions = analyzeTranscriptForClips(transcript, [], 8);
+    const clipSuggestions = analyzeTranscriptForClips(transcript, [], 8, duration);
 
     if (clipSuggestions.length === 0) {
       return NextResponse.json({

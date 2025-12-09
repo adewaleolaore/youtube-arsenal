@@ -9,9 +9,18 @@ if (ffmpegInstaller.path) {
     ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 }
 
-const ytDlpWrap = new YTDlpWrap();
+// Initialize with a specific path for the binary
+const ytDlpBinaryPath = path.join(process.cwd(), 'yt-dlp.exe');
+const ytDlpWrap = new YTDlpWrap(ytDlpBinaryPath);
 
 export async function downloadVideo(videoId: string): Promise<string> {
+    // Ensure yt-dlp binary exists
+    if (!fs.existsSync(ytDlpBinaryPath)) {
+        console.log('Downloading yt-dlp binary...');
+        await YTDlpWrap.downloadFromGithub(ytDlpBinaryPath);
+        console.log('yt-dlp binary downloaded.');
+    }
+
     const downloadDir = path.join(process.cwd(), 'public', 'downloads');
     if (!fs.existsSync(downloadDir)) {
         fs.mkdirSync(downloadDir, { recursive: true });
@@ -27,13 +36,23 @@ export async function downloadVideo(videoId: string): Promise<string> {
     console.log(`Downloading video ${videoId} to ${outputPath}...`);
 
     return new Promise((resolve, reject) => {
+        const args = [
+            'https://www.youtube.com/watch?v=' + videoId,
+            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            '-o', outputPath,
+        ];
+
+        // Pass ffmpeg location to yt-dlp if available
+        if (ffmpegInstaller.path) {
+            args.push('--ffmpeg-location', ffmpegInstaller.path);
+        }
+
         ytDlpWrap
-            .exec([
-                'https://www.youtube.com/watch?v=' + videoId,
-                '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                '-o', outputPath,
-            ])
-            .on('error', (error) => reject(error))
+            .exec(args)
+            .on('error', (error) => {
+                console.error('yt-dlp error:', error);
+                reject(error);
+            })
             .on('close', () => resolve(outputPath));
     });
 }

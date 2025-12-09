@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Play, Copy, ExternalLink, Clock, Eye, User, Calendar, LogOut, History, Settings, Download } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import toast from 'react-hot-toast';
 
 // Import our existing thumbnail functionality
 import ThumbnailEditor from '@/components/ThumbnailEditor';
@@ -340,9 +341,16 @@ export default function Dashboard() {
   };
 
   const handleDownloadClip = async (clip: any, index: number) => {
-    if (!videoData?.videoId) return;
+    console.log('Download clicked for clip:', index);
+
+    if (!videoData?.videoId) {
+      console.error('Missing videoId in handleDownloadClip', videoData);
+      toast.error('Error: Video ID missing. Please reload.');
+      return;
+    }
 
     setDownloadingClip(index.toString());
+    const toastId = toast.loading('Preparing your clip... This may take a moment.');
 
     try {
       const response = await fetch('/api/youtube/download-clip', {
@@ -368,9 +376,13 @@ export default function Dashboard() {
       link.click();
       document.body.removeChild(link);
 
+      toast.success('Download started!', { id: toastId });
+
     } catch (error) {
       console.error('Error downloading clip:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to download clip');
+      const msg = error instanceof Error ? error.message : 'Failed to download clip';
+      setErrorMessage(msg);
+      toast.error(msg, { id: toastId });
     } finally {
       setDownloadingClip(null);
     }
@@ -400,24 +412,25 @@ export default function Dashboard() {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      // You could add a toast notification here
+      toast.success('Copied to clipboard!');
     } catch (err) {
       console.error('Failed to copy text: ', err);
+      toast.error('Failed to copy text');
     }
   };
 
   // Transform database video to UI state
   const transformDbVideoToState = (dbVideo: any): VideoData => {
     return {
-      videoId: dbVideo.video_id,
-      youtubeUrl: dbVideo.youtube_url,
+      videoId: dbVideo.video_id || dbVideo.youtubeVideoId,
+      youtubeUrl: dbVideo.youtube_url || dbVideo.youtubeUrl,
       metadata: {
         title: dbVideo.title,
         description: dbVideo.description || '',
         duration: dbVideo.duration || 0,
-        thumbnail: dbVideo.thumbnail_url || '',
-        author: 'Unknown', // DB doesn't store author info
-        viewCount: 0, // DB doesn't store view count
+        thumbnail: dbVideo.thumbnail_url || dbVideo.thumbnailUrl || '',
+        author: 'Unknown',
+        viewCount: 0,
         uploadDate: dbVideo.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
       },
       transcript: dbVideo.transcript || '',
@@ -425,7 +438,7 @@ export default function Dashboard() {
       fullTranscriptLength: dbVideo.transcript?.length || 0,
       analysis: {
         summary: dbVideo.summary || '',
-        generatedDescription: dbVideo.generated_description || '',
+        generatedDescription: dbVideo.generated_description || dbVideo.generatedDescription || '',
         keywords: dbVideo.keywords || [],
         clipSuggestions: dbVideo.clips?.map((clip: any) => ({
           title: clip.title,
@@ -657,12 +670,18 @@ export default function Dashboard() {
                     <div className="flex flex-col lg:flex-row gap-6">
                       <div className="lg:w-80 flex-shrink-0">
                         <div className="aspect-video relative rounded-lg overflow-hidden">
-                          <Image
-                            src={videoData.metadata.thumbnail}
-                            alt={videoData.metadata.title}
-                            fill
-                            className="object-cover"
-                          />
+                          {videoData.metadata.thumbnail ? (
+                            <Image
+                              src={videoData.metadata.thumbnail}
+                              alt={videoData.metadata.title}
+                              fill
+                              className="object-cover"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                              <span className="text-4xl">🎬</span>
+                            </div>
+                          )}
                           <div className="absolute inset-0 flex items-center justify-center">
                             <div className="bg-black bg-opacity-75 rounded-full p-3">
                               <Play className="w-8 h-8 text-white" />
@@ -829,10 +848,10 @@ export default function Dashboard() {
                               </h4>
                               <div className="flex items-center space-x-2">
                                 <span className={`px-3 py-1 text-sm rounded-full font-medium ${(clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')) === 'HIGH'
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
-                                    : (clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')) === 'MEDIUM'
-                                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
-                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                                  : (clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')) === 'MEDIUM'
+                                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
+                                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
                                   }`}>
                                   {clip.viralPotential || (clip.hookScore >= 4 ? 'HIGH' : clip.hookScore >= 3 ? 'MEDIUM' : 'LOW')}
                                 </span>

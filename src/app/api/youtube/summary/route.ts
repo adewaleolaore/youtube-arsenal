@@ -50,6 +50,25 @@ export async function POST(request: NextRequest) {
 
 Video Title: "${title}"
 ${description ? `Original Description: "${description.substring(0, 500)}"` : ''}
+
+Transcript:
+${transcript.substring(0, 15000)}
+
+Instructions:
+- Create a 2-3 paragraph summary that captures the main points
+- Focus on key insights, takeaways, and value for viewers
+- Write in an engaging, professional tone
+- DO NOT use emojis
+- Make it compelling and informative
+
+Summary:`;
+
+    const result = await model.generateContent(summaryPrompt);
+    const response = await result.response;
+    const summary = response.text().trim();
+
+    console.log('Summary generated:', summary.substring(0, 100) + '...');
+
     // Save to database if videoId is provided
     if (videoId) {
       try {
@@ -74,7 +93,7 @@ ${description ? `Original Description: "${description.substring(0, 500)}"` : ''}
 
   } catch (error) {
     console.error('Error generating summary:', error);
-    
+
     if (error instanceof Error) {
       if (error.message.includes('quota')) {
         return NextResponse.json(
@@ -83,9 +102,9 @@ ${description ? `Original Description: "${description.substring(0, 500)}"` : ''}
         );
       }
     }
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to generate summary',
         details: error instanceof Error ? error.message : 'Unknown error'
       },

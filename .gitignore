@@ -49,3 +49,13 @@ test*.json
 
 # vercel
 .vercel
+
+# generated content
+public/downloads/
+public/clips/
+
+# binaries
+yt-dlp.exe
+
+# logs and tests
+test-output.txt
