@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-    
+
     console.log('Processing image edit request...');
     console.log('API Key configured:', process.env.GEMINI_API_KEY ? 'Yes' : 'No');
 
@@ -29,18 +30,27 @@ export async function POST(request: NextRequest) {
 
     // Convert the uploaded file to base64
     const bytes = await imageFile.arrayBuffer();
-    const base64Image = Buffer.from(bytes).toString('base64');
+    const imageBuffer = Buffer.from(bytes);
+
+    // Get original image dimensions to ensure output matches
+    const metadata = await sharp(imageBuffer).metadata();
+    const targetWidth = metadata.width || 1280;
+    const targetHeight = metadata.height || 720;
+
+    console.log(`Input image dimensions: ${targetWidth}x${targetHeight}`);
+
+    const base64Image = imageBuffer.toString('base64');
 
     // Try different model names for image generation and editing
+    // Use Gemini 2.5 Flash Image as requested by user
     const modelNames = [
-      'gemini-2.5-flash-image-preview',
-      'gemini-2.0-flash-exp', 
-      'gemini-1.5-pro-002'
+      'gemini-2.5-flash-image',
+      'gemini-2.5-flash-image-preview'
     ];
-    
+
     let model;
     let lastError;
-    
+
     // Try to initialize the model with different names
     for (const modelName of modelNames) {
       try {
@@ -48,7 +58,7 @@ export async function POST(request: NextRequest) {
         model = genAI.getGenerativeModel({
           model: modelName
         });
-        
+
         // Test the model with a simple request to ensure it works
         console.log(`Model ${modelName} initialized successfully`);
         break;
@@ -58,10 +68,10 @@ export async function POST(request: NextRequest) {
         continue;
       }
     }
-    
+
     if (!model) {
       return NextResponse.json(
-        { 
+        {
           error: 'No suitable model available for image generation',
           details: lastError instanceof Error ? lastError.message : 'All models failed to initialize'
         },
@@ -81,12 +91,14 @@ export async function POST(request: NextRequest) {
         text: `Please edit this YouTube thumbnail image based on these instructions: "${prompt}". 
         
         Create a new version of this image that implements the requested changes while:
-        - Maintaining the wide angle format (same as the original)
-        - Keeping the widescreen layout and proportions
+        - Maintaining the exact dimensions of ${targetWidth}x${targetHeight} pixels
+        - Keeping the widescreen layout (aspect ratio ${(targetWidth / targetHeight).toFixed(2)}:1)
         - Preserving the overall composition suitable for YouTube thumbnails
         - Keeping all text readable and appropriately sized
         - Ensuring the image remains visually appealing and engaging
         - Maintaining professional YouTube thumbnail quality
+        
+        CRITICAL REQUIREMENT: Output must be exactly ${targetWidth}x${targetHeight} pixels. Do not yield a square image.
         
         Generate the edited wide angle thumbnail image directly - don't just describe what should be changed.`
       }
@@ -94,11 +106,11 @@ export async function POST(request: NextRequest) {
 
     // Generate the response
     const response = await model.generateContent(content);
-    
+
     // Extract images and text from the response
     const result = response.response;
     const parts = result.candidates?.[0]?.content?.parts || [];
-    
+
     let processedImageBase64 = null;
     let responseText = '';
 
@@ -117,6 +129,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Process the output image to ensure it matches specific dimensions
+    try {
+      const outputBuffer = Buffer.from(processedImageBase64, 'base64');
+      const outputMetadata = await sharp(outputBuffer).metadata();
+
+      console.log(`Generated edit dimensions: ${outputMetadata.width}x${outputMetadata.height}`);
+
+      let finalBuffer = outputBuffer;
+
+      // If dimensions don't match, resize/crop to fit
+      if (outputMetadata.width !== targetWidth || outputMetadata.height !== targetHeight) {
+        console.log(`Resizing edited image to match target ${targetWidth}x${targetHeight}`);
+
+        finalBuffer = await sharp(outputBuffer)
+          .resize(targetWidth, targetHeight, {
+            fit: 'cover',
+            position: 'center'
+          })
+          .toBuffer();
+
+        processedImageBase64 = finalBuffer.toString('base64');
+      }
+    } catch (processError) {
+      console.error('Error post-processing edited image:', processError);
+      // Continue with original if processing fails
+    }
+
     return NextResponse.json({
       success: true,
       processedImage: `data:image/png;base64,${processedImageBase64}`,
@@ -126,32 +165,32 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error processing image:', error);
-    
+
     // Handle specific Google AI errors
     if (error instanceof Error) {
       if (error.message.includes('429') || error.message.includes('quota')) {
         return NextResponse.json(
-          { 
+          {
             error: 'API quota exceeded. Please wait a moment and try again, or check your Gemini API billing settings.',
             details: 'You may have hit the free tier limits. Consider upgrading your Google AI plan.'
           },
           { status: 429 }
         );
       }
-      
+
       if (error.message.includes('401') || error.message.includes('API key')) {
         return NextResponse.json(
-          { 
+          {
             error: 'Invalid API key. Please check your Gemini API key configuration.',
             details: 'Make sure your GEMINI_API_KEY is correct in the .env.local file'
           },
           { status: 401 }
         );
       }
-      
+
       if (error.message.includes('model')) {
         return NextResponse.json(
-          { 
+          {
             error: 'Model not available. The Gemini image model may not be accessible.',
             details: 'Try again later or check if the model name is correct'
           },
@@ -159,9 +198,9 @@ export async function POST(request: NextRequest) {
         );
       }
     }
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to process image',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
