@@ -2,6 +2,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import YTDlpWrap from 'yt-dlp-wrap';
 
 // Ensure ffmpeg path is set
@@ -10,7 +11,7 @@ if (ffmpegInstaller.path) {
 }
 
 // Initialize with a specific path for the binary
-const ytDlpBinaryPath = path.join(process.cwd(), 'yt-dlp.exe');
+const ytDlpBinaryPath = path.join(process.cwd(), process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 const ytDlpWrap = new YTDlpWrap(ytDlpBinaryPath);
 
 export async function downloadVideo(videoId: string): Promise<string> {
@@ -21,7 +22,7 @@ export async function downloadVideo(videoId: string): Promise<string> {
         console.log('yt-dlp binary downloaded.');
     }
 
-    const downloadDir = path.join(process.cwd(), 'public', 'downloads');
+    const downloadDir = path.join(os.tmpdir(), 'youtube-downloads');
     if (!fs.existsSync(downloadDir)) {
         fs.mkdirSync(downloadDir, { recursive: true });
     }
