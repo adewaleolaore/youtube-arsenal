@@ -59,3 +59,16 @@ yt-dlp.exe
 
 # logs and tests
 test-output.txt
+
+# Documentation and temporary fix logs
+DATABASE_FIX_INSTRUCTIONS.md
+ERRORS_FIXED_SUMMARY.md
+FIX_UUID_ERROR.md
+HOOKS_FIX_SUMMARY.md
+TASKS_COMPLETED.md
+WARP.md
+
+# SQL Fixes and temporary schemas
+database-fix*.sql
+fixed-schema.sql
+# Keep final-schema.sql as the reference, ignore others
